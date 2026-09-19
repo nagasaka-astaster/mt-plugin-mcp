@@ -59,6 +59,7 @@ skills/movable-type-mcp/       # 配布用 Claude Skill（運用手順。Perl �
 | `Args.pm` | bool 引数の判定 / confirm 必須チェック | `t/args.t` |
 | `Author.pm` | `author_id` → `MT::Author` のロード（メモ化つき） | `t/author_helper.t` |
 | `Perm.pm` | 権限チェック | `t/perm_log_view.t` |
+| `Protocol.pm` / `App.pm` | JSON-RPC の入口（`initialize` / 不正リクエスト / 通知） | `t/protocol_basics.t` |
 
 ツールを追加・変更したら、対応する `t/*.t` を足すか更新します。スタブが足りないときは `t/lib/MT/` に最小限のモックを置きます（本番の MT コアをコピーしない）。
 
