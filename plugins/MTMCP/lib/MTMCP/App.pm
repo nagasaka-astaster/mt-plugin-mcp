@@ -116,7 +116,7 @@ sub _check_auth {
     unless ($session && $session->kind eq 'DA') {
         return _respond($app, 401, { error => 'Invalid token' });
     }
-    if ($session->start + $session->duration < time()) {
+    if ($session->duration < time()) {
         return _respond($app, 401, { error => 'Token expired' });
     }
 
