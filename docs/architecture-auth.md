@@ -43,6 +43,8 @@ sequenceDiagram
 
 アクセストークンの有効期限は 7 日、リフレッシュトークンは 30 日です。`grant_type=refresh_token` のたびに両方をローテーションし、古い refresh_token は無効化します。
 
+有効期限は `mt_session.duration` に**失効時刻（epoch）**として保存します。MT 本体の `MT::Session::purge` が `duration <= time` の行を削除し、これは `run-periodic-tasks` から定期的に呼ばれるためです。経過秒数を入れると発行直後のレコードが消えます。
+
 ### ログイン API
 
 ```mermaid
@@ -179,7 +181,7 @@ flowchart TD
     D --> F[MT::Session->load token]
     F --> G{セッションが存在<br/>かつ kind == 'DA'?}
     G -- No --> E2[401 Invalid token]
-    G -- Yes --> H{start + duration >= now?}
+    G -- Yes --> H{duration >= now?}
     H -- No --> E3[401 Token expired]
     H -- Yes --> I{resolve_author でユーザー取得?}
     I -- No --> E4[401 旧形式トークン]

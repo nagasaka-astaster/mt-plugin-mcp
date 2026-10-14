@@ -7,6 +7,11 @@ use MIME::Base64 qw(encode_base64);
 
 my $json = JSON->new->ascii->canonical;
 
+# MT::Session の duration カラムは「経過秒数」ではなく「失効時刻（epoch）」。
+# MT 本体の MT::Session::purge が duration <= time の行を削除し、これは
+# run-periodic-tasks から定期的に呼ばれる。相対秒数を入れると 1970 年に
+# 失効済みとみなされ、発行直後のレコードが消える。保存時は必ず
+# time() + 下記の TTL を入れ、検証時は duration と time() を直接比べる。
 use constant CODE_DURATION       => 600;                 # 認可コードの有効期限: 10分
 use constant TOKEN_DURATION      => 604800;               # アクセストークンの有効期限: 7日
 use constant CLIENT_REG_DURATION => 10 * 365 * 24 * 3600; # クライアント登録の有効期限: 実質無期限（10年）
@@ -79,7 +84,7 @@ sub _store_client {
     $session->id($client_id);
     $session->kind('DR');
     $session->start(time());
-    $session->duration(CLIENT_REG_DURATION);
+    $session->duration(time() + CLIENT_REG_DURATION);
     $session->set('redirect_uris', $json->encode($redirect_uris));
     $session->set('client_name', $client_name // '');
     $session->save or die "Could not store client registration: " . $session->errstr . "\n";
@@ -125,7 +130,7 @@ sub issue_code {
     $session->id($code);
     $session->kind('DC');
     $session->start(time());
-    $session->duration(CODE_DURATION);
+    $session->duration(time() + CODE_DURATION);
     $session->set('author_id', $author->id);
     $session->set('redirect_uri', $redirect_uri);
     $session->set('code_challenge', $code_challenge);
@@ -169,7 +174,7 @@ sub _handle_authorization_code_grant {
     require MT::Session;
     my $session = MT::Session->load({ id => $code, kind => 'DC' });
 
-    unless ($session && $session->start + $session->duration >= time()) {
+    unless ($session && $session->duration >= time()) {
         $session->remove if $session;
         return _oauth_error($app, 400, 'invalid_grant', 'Authorization code is invalid or expired');
     }

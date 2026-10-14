@@ -21,6 +21,11 @@ sub secure_random_hex {
 
 my $json = JSON->new->ascii->canonical;
 
+# MT::Session の duration カラムは「経過秒数」ではなく「失効時刻（epoch）」。
+# MT 本体の MT::Session::purge が duration <= time の行を削除し、これは
+# run-periodic-tasks から定期的に呼ばれる。相対秒数を入れると 1970 年に
+# 失効済みとみなされ、発行直後のレコードが消える。保存時は必ず
+# time() + 下記の TTL を入れ、検証時は duration と time() を直接比べる。
 use constant TOKEN_DURATION         => 604800;            # アクセストークン有効期限: 7日
 use constant REFRESH_TOKEN_DURATION => 30 * 24 * 60 * 60;  # リフレッシュトークン有効期限: 30日
 use constant FAIL_WINDOW      => 900;      # ロックアウト判定の時間窓: 15分
@@ -105,7 +110,7 @@ sub _issue_token {
     $session->id($token);
     $session->kind('DA');
     $session->start(time());
-    $session->duration(TOKEN_DURATION);
+    $session->duration(time() + TOKEN_DURATION);
     $session->set('author_id', $author->id);
     $session->save or die "Could not create session: " . $session->errstr . "\n";
 
@@ -121,7 +126,7 @@ sub _issue_refresh_token {
     $session->id($token);
     $session->kind('DT');
     $session->start(time());
-    $session->duration(REFRESH_TOKEN_DURATION);
+    $session->duration(time() + REFRESH_TOKEN_DURATION);
     $session->set('author_id', $author->id);
     $session->save or die "Could not create refresh token session: " . $session->errstr . "\n";
 
@@ -151,7 +156,7 @@ sub resolve_refresh_session {
     require MT::Session;
     my $session = MT::Session->load({ id => $refresh_token, kind => 'DT' });
     return undef unless $session;
-    return undef if $session->start + $session->duration < time();
+    return undef if $session->duration < time();
 
     return undef unless _claim_refresh_token($refresh_token);
 
@@ -170,7 +175,7 @@ sub _claim_refresh_token {
     $claim->id('mcprtclaim:' . sha256_hex($refresh_token));
     $claim->kind('DU');
     $claim->start(time());
-    $claim->duration(REFRESH_TOKEN_DURATION);
+    $claim->duration(time() + REFRESH_TOKEN_DURATION);
     return $claim->save ? 1 : 0;
 }
 
@@ -212,6 +217,9 @@ sub _record_failure {
         if ($now - $since >= FAIL_WINDOW) {
             $rec->set('count', 1);
             $rec->set('since', $now);
+            # 時間窓を張り直すので失効時刻も延ばす。古い失効時刻のままだと
+            # 次の purge でレコードごと消え、新しい時間窓のカウントが失われる。
+            $rec->duration($now + FAIL_WINDOW);
         } else {
             $rec->set('count', ($rec->get('count') // 0) + 1);
         }
@@ -220,7 +228,7 @@ sub _record_failure {
         $rec->id(_fail_key($username));
         $rec->kind('DF');
         $rec->start($now);
-        $rec->duration(FAIL_WINDOW);
+        $rec->duration($now + FAIL_WINDOW);
         $rec->set('count', 1);
         $rec->set('since', $now);
     }
