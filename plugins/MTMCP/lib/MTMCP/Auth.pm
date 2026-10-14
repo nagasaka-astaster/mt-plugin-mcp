@@ -217,6 +217,9 @@ sub _record_failure {
         if ($now - $since >= FAIL_WINDOW) {
             $rec->set('count', 1);
             $rec->set('since', $now);
+            # 時間窓を張り直すので失効時刻も延ばす。古い失効時刻のままだと
+            # 次の purge でレコードごと消え、新しい時間窓のカウントが失われる。
+            $rec->duration($now + FAIL_WINDOW);
         } else {
             $rec->set('count', ($rec->get('count') // 0) + 1);
         }

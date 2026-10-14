@@ -132,6 +132,28 @@ sub _is_expiry_at {
     is($again->get('count'), 2, '同じ時間窓では失敗回数を積み上げる');
 }
 
+# --- 時間窓を過ぎた失敗は記録を張り直し、失効時刻も延ばす（DF）---
+{
+    _reset();
+    MTMCP::Auth::_record_failure('someone@example.com');
+
+    # 前回の時間窓が終わった状態にする
+    my ($rec) = grep { $_->kind eq 'DF' } values %MT::Session::STORE;
+    $rec->set('since', time() - 900);
+    $rec->duration(time());
+
+    MTMCP::Auth::_record_failure('someone@example.com');
+    my ($again) = grep { $_->kind eq 'DF' } values %MT::Session::STORE;
+    is($again->get('count'), 1, '時間窓を過ぎたら失敗回数を 1 から数え直す');
+    _is_expiry_at($again, 900, '張り直した時間窓に合わせて失効時刻を延ばす');
+
+    MT::Session->purge;
+    ok(
+        (grep { $_->kind eq 'DF' } values %MT::Session::STORE),
+        'purge 後も張り直した失敗記録が残る'
+    );
+}
+
 # --- 認可コード（DC）---
 {
     _reset();
